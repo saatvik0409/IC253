@@ -16,8 +16,8 @@ struct Node {
     }
 };
 
-/* Read PGM image (P2 or P5) with STRICT binarization */
-vector<vector<int>> readPGM(const string& filename) {
+/* ================= READ PGM ================= */
+vector<vector<int>> readPGM(const string& filename, int& width, int& height, int& maxval) {
     ifstream file(filename, ios::binary);
     if (!file) {
         cerr << "Cannot open image file\n";
@@ -31,34 +31,54 @@ vector<vector<int>> readPGM(const string& filename) {
         exit(1);
     }
 
-    int width, height, maxval;
     file >> width >> height >> maxval;
     file.ignore();
 
     vector<vector<int>> image(height, vector<int>(width, 0));
 
     if (magic == "P2") {
-        for (int i = 0; i < height; i++) {
+        for (int i = 0; i < height; i++)
             for (int j = 0; j < width; j++) {
                 int pixel;
                 file >> pixel;
                 image[i][j] = (pixel == maxval ? 0 : 1);
             }
-        }
     } else { // P5
-        for (int i = 0; i < height; i++) {
+        for (int i = 0; i < height; i++)
             for (int j = 0; j < width; j++) {
                 unsigned char pixel;
                 file.read(reinterpret_cast<char*>(&pixel), 1);
                 image[i][j] = (pixel == maxval ? 0 : 1);
             }
-        }
     }
 
     return image;
 }
 
-/* Convert matrix to sparse linked node structure */
+/* ================= WRITE PGM ================= */
+void writePGM(const string& filename,
+              const vector<vector<int>>& image,
+              int width, int height, int maxval) {
+
+    ofstream file(filename, ios::binary);
+    if (!file) {
+        cerr << "Cannot write output image\n";
+        exit(1);
+    }
+
+    file << "P2\n";
+    file << width << " " << height << "\n";
+    file << maxval << "\n";
+
+    for (int i = 0; i < height; i++) {
+        for (int j = 0; j < width; j++) {
+            file << (image[i][j] ? maxval : 0) << " ";
+        }
+        file << "\n";
+    }
+}
+
+/* ================= SPARSE GRAPH ================= */
 Node* convertToLinkedList(vector<vector<int>>& matrix,
                           vector<vector<Node*>>& node_matrix) {
 
@@ -111,7 +131,7 @@ Node* convertToLinkedList(vector<vector<int>>& matrix,
     return head;
 }
 
-/* DFS on node graph */
+/* ================= CONNECTED COMPONENTS ================= */
 void dfs(Node* node,
          unordered_set<Node*>& visited,
          int& area,
@@ -127,18 +147,15 @@ void dfs(Node* node,
     };
 
     for (Node* nbr : neighbors) {
-        if (!nbr) {
-            isBoundary = true;
-        } else if (!visited.count(nbr)) {
+        if (!nbr) isBoundary = true;
+        else if (!visited.count(nbr))
             dfs(nbr, visited, area, boundary);
-        }
     }
 
     if (isBoundary)
         boundary.push_back(node);
 }
 
-/* Connected component detection */
 void findConnectedComponents(Node* head) {
     unordered_set<Node*> visited;
     int component = 0;
@@ -151,28 +168,52 @@ void findConnectedComponents(Node* head) {
 
             dfs(curr, visited, area, boundary);
 
-            cout << "Object " << component << ":\n";
-            cout << "Area = " << area << "\n";
+            cout << "Object " << component << "\n";
+            cout << "Area: " << area << "\n\n";
+
             cout << "Boundary pixels: ";
             for (auto* b : boundary) {
                 cout << "(" << b->cell_position.first
-                     << "," << b->cell_position.second << ") ";
+                    << "," << b->cell_position.second << ") ";
             }
             cout << "\n\n";
+
         }
     }
 
     cout << "Total objects detected = " << component << "\n";
 }
 
+/* ================= FLIP IMAGE ================= */
+vector<vector<int>> flipImage(const vector<vector<int>>& original) {
+    int h = original.size();
+    int w = original[0].size();
+
+    vector<vector<int>> flipped(h, vector<int>(w, 0));
+    for (int i = 0; i < h; i++)
+        for (int j = 0; j < w; j++)
+            flipped[i][j] = original[i][j] ? 1 : 0;
+
+    return flipped;
+}
+
+/* ================= MAIN ================= */
 int main() {
-    string filename = "binary_image.pgm"; // input image
-    vector<vector<int>> matrix = readPGM(filename);
+    string inputFile = "input_image.pgm";
+    string outputFile = "flipped_image.pgm";
+
+    int width, height, maxval;
+    vector<vector<int>> matrix = readPGM(inputFile, width, height, maxval);
 
     vector<vector<Node*>> node_matrix;
     Node* head = convertToLinkedList(matrix, node_matrix);
 
     findConnectedComponents(head);
+
+    vector<vector<int>> flipped = flipImage(matrix);
+    writePGM(outputFile, flipped, width, height, maxval);
+
+    cout << "Flipped image saved as " << outputFile << "\n";
 
     return 0;
 }
