@@ -1,9 +1,8 @@
-import numpy as np
 from PIL import Image
-import sys
-sys.setrecursionlimit(10**7)
 
-# ================= NODE =================
+# ================================
+# NODE DEFINITION
+# ================================
 class Node:
     def __init__(self, i, j):
         self.right = None
@@ -15,26 +14,36 @@ class Node:
 
 
 # ================= READ PNG =================
-def read_png(filename):
+def readPNG(filename):
     img = Image.open(filename).convert("L")  # grayscale
-    arr = np.array(img)
+    width, height = img.size
+    pixels = img.load()
 
-    # binary threshold
-    binary = (arr < 255 // 2).astype(int)
+    matrix = [[0]*width for _ in range(height)]
+    for i in range(height):
+        for j in range(width):
+            matrix[i][j] = 1 if pixels[j, i] < 128 else 0
 
-    h, w = binary.shape
-    return binary.tolist(), w, h
+    return matrix, width, height
 
 
 # ================= WRITE PNG =================
-def write_png(filename, image):
-    arr = np.array(image, dtype=np.uint8) * 255
-    img = Image.fromarray(arr, mode="L")
+def writePNG(filename, matrix):
+    height = len(matrix)
+    width = len(matrix[0])
+
+    img = Image.new("L", (width, height))
+    pixels = img.load()
+
+    for i in range(height):
+        for j in range(width):
+            pixels[j, i] = 0 if matrix[i][j] else 255
+
     img.save(filename)
 
 
 # ================= SPARSE GRAPH =================
-def convert_to_linked_list(matrix):
+def convertToLinkedList(matrix):
     m, n = len(matrix), len(matrix[0])
     node_matrix = [[None]*n for _ in range(m)]
 
@@ -45,56 +54,53 @@ def convert_to_linked_list(matrix):
             if matrix[i][j] == 1:
                 node = Node(i, j)
                 node_matrix[i][j] = node
-                if head is None:
+                if not head:
                     head = tail = node
                 else:
                     tail.next = node
                     tail = node
 
-    directions = [(1,0), (-1,0), (0,1), (0,-1)]
+    dx = [1, -1, 0, 0]
+    dy = [0, 0, 1, -1]
+
     for i in range(m):
         for j in range(n):
-            node = node_matrix[i][j]
-            if not node:
+            if not node_matrix[i][j]:
                 continue
-            for dx, dy in directions:
-                x, y = i + dx, j + dy
+            for k in range(4):
+                x, y = i + dx[k], j + dy[k]
                 if 0 <= x < m and 0 <= y < n and node_matrix[x][y]:
-                    if dx == 1:  node.down = node_matrix[x][y]
-                    if dx == -1: node.up = node_matrix[x][y]
-                    if dy == 1:  node.right = node_matrix[x][y]
-                    if dy == -1: node.left = node_matrix[x][y]
+                    if dx[k] == 1:
+                        node_matrix[i][j].down = node_matrix[x][y]
+                    if dx[k] == -1:
+                        node_matrix[i][j].up = node_matrix[x][y]
+                    if dy[k] == 1:
+                        node_matrix[i][j].right = node_matrix[x][y]
+                    if dy[k] == -1:
+                        node_matrix[i][j].left = node_matrix[x][y]
 
     return head
 
 
-# ================= DFS =================
-def dfs(node, visited, boundary):
-    stack = [node]
-    area = 0
+# ================= CONNECTED COMPONENTS (DSA) =================
+def dfs(node, visited, area, boundary):
+    visited.add(node)
+    area[0] += 1
 
-    while stack:
-        curr = stack.pop()
-        if curr in visited:
-            continue
-        visited.add(curr)
-        area += 1
+    isBoundary = False
+    neighbors = [node.up, node.down, node.left, node.right]
 
-        is_boundary = False
-        for nbr in [curr.up, curr.down, curr.left, curr.right]:
-            if nbr is None:
-                is_boundary = True
-            elif nbr not in visited:
-                stack.append(nbr)
+    for nbr in neighbors:
+        if nbr is None:
+            isBoundary = True
+        elif nbr not in visited:
+            dfs(nbr, visited, area, boundary)
 
-        if is_boundary:
-            boundary.append(curr)
-
-    return area
+    if isBoundary:
+        boundary.append(node)
 
 
-# ================= CONNECTED COMPONENTS =================
-def find_connected_components(head):
+def findConnectedComponents(head):
     visited = set()
     component = 0
 
@@ -102,15 +108,16 @@ def find_connected_components(head):
     while curr:
         if curr not in visited:
             component += 1
+            area = [0]
             boundary = []
-            area = dfs(curr, visited, boundary)
+
+            dfs(curr, visited, area, boundary)
 
             print(f"Object {component}")
-            print(f"Area: {area}")
+            print(f"Area: {area[0]}")
             print("Boundary pixels:", end=" ")
             for b in boundary:
-                i, j = b.cell_position
-                print(f"({i},{j})", end=" ")
+                print(b.cell_position, end=" ")
             print("\n")
 
         curr = curr.next
@@ -118,20 +125,29 @@ def find_connected_components(head):
     print("Total objects detected =", component)
 
 
+# ================= FLIP IMAGE =================
+def flipImage(matrix):
+    h, w = len(matrix), len(matrix[0])
+    flipped = [[0]*w for _ in range(h)]
+
+    for i in range(h):
+        for j in range(w):
+            flipped[i][j] = 0 if matrix[i][j] else 1
+
+    return flipped
+
+
 # ================= MAIN =================
-def main():
-    input_file = "input_image.png"
-    output_file = "flipped_image.png"
-
-    matrix, w, h = read_png(input_file)
-
-    head = convert_to_linked_list(matrix)
-    find_connected_components(head)
-
-    # flipped image (same as binary here)
-    write_png(output_file, matrix)
-    print("Flipped image saved as", output_file)
-
-
 if __name__ == "__main__":
-    main()
+    inputFile = f"input_image.png"
+    outputFile = f"flipped_image.png"
+
+    matrix, width, height = readPNG(inputFile)
+    head = convertToLinkedList(matrix)
+
+    findConnectedComponents(head)
+
+    flipped = flipImage(matrix)
+    writePNG(outputFile, flipped)
+
+    print("Flipped image saved as", outputFile)
