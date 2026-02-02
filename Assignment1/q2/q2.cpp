@@ -17,7 +17,9 @@ struct Node {
 };
 
 /* ================= READ PGM ================= */
-vector<vector<int>> readPGM(const string& filename, int& width, int& height, int& maxval) {
+vector<vector<int>> readPGM(const string& filename,
+                            int& width, int& height, int& maxval) {
+
     ifstream file(filename, ios::binary);
     if (!file) {
         cerr << "Cannot open image file\n";
@@ -131,31 +133,53 @@ Node* convertToLinkedList(vector<vector<int>>& matrix,
     return head;
 }
 
-/* ================= CONNECTED COMPONENTS ================= */
-void dfs(Node* node,
-         unordered_set<Node*>& visited,
-         int& area,
-         vector<Node*>& boundary) {
+/* ================= FLOOD FILL (NO DFS) ================= */
+void floodFillComponent(Node* start,
+                        unordered_set<Node*>& visited,
+                        int& area,
+                        vector<Node*>& boundary) {
 
-    visited.insert(node);
-    area++;
+    unordered_set<Node*> component;
+    component.insert(start);
 
-    bool isBoundary = false;
+    bool changed = true;
+    while (changed) {
+        changed = false;
 
-    Node* neighbors[4] = {
-        node->up, node->down, node->left, node->right
-    };
+        for (auto* node : component) {
+            Node* neighbors[4] = {
+                node->up, node->down, node->left, node->right
+            };
 
-    for (Node* nbr : neighbors) {
-        if (!nbr) isBoundary = true;
-        else if (!visited.count(nbr))
-            dfs(nbr, visited, area, boundary);
+            for (Node* nbr : neighbors) {
+                if (nbr && !component.count(nbr)) {
+                    component.insert(nbr);
+                    changed = true;
+                }
+            }
+        }
     }
 
-    if (isBoundary)
-        boundary.push_back(node);
+    for (auto* node : component)
+        visited.insert(node);
+
+    area = component.size();
+
+    for (auto* node : component) {
+        Node* neighbors[4] = {
+            node->up, node->down, node->left, node->right
+        };
+
+        for (Node* nbr : neighbors) {
+            if (!nbr) {
+                boundary.push_back(node);
+                break;
+            }
+        }
+    }
 }
 
+/* ================= CONNECTED COMPONENTS ================= */
 void findConnectedComponents(Node* head) {
     unordered_set<Node*> visited;
     int component = 0;
@@ -166,7 +190,7 @@ void findConnectedComponents(Node* head) {
             int area = 0;
             vector<Node*> boundary;
 
-            dfs(curr, visited, area, boundary);
+            floodFillComponent(curr, visited, area, boundary);
 
             cout << "Object " << component << "\n";
             cout << "Area: " << area << "\n\n";
@@ -174,10 +198,9 @@ void findConnectedComponents(Node* head) {
             cout << "Boundary pixels: ";
             for (auto* b : boundary) {
                 cout << "(" << b->cell_position.first
-                    << "," << b->cell_position.second << ") ";
+                     << "," << b->cell_position.second << ") ";
             }
             cout << "\n\n";
-
         }
     }
 

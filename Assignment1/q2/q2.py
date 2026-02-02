@@ -82,24 +82,38 @@ def convertToLinkedList(matrix):
     return head
 
 
-# ================= CONNECTED COMPONENTS (DSA) =================
-def dfs(node, visited, area, boundary):
-    visited.add(node)
-    area[0] += 1
+# ================= FLOOD FILL (NO DFS) =================
+def floodFillComponent(start_node, visited):
+    component_nodes = set()
+    component_nodes.add(start_node)
 
-    isBoundary = False
-    neighbors = [node.up, node.down, node.left, node.right]
+    changed = True
+    while changed:
+        changed = False
+        for node in list(component_nodes):
+            for nbr in [node.up, node.down, node.left, node.right]:
+                if nbr and nbr not in component_nodes:
+                    component_nodes.add(nbr)
+                    changed = True
 
-    for nbr in neighbors:
-        if nbr is None:
-            isBoundary = True
-        elif nbr not in visited:
-            dfs(nbr, visited, area, boundary)
+    # mark visited
+    for node in component_nodes:
+        visited.add(node)
 
-    if isBoundary:
-        boundary.append(node)
+    # compute area & boundary
+    area = len(component_nodes)
+    boundary = []
+
+    for node in component_nodes:
+        for nbr in [node.up, node.down, node.left, node.right]:
+            if nbr is None:
+                boundary.append(node)
+                break
+
+    return area, boundary
 
 
+# ================= CONNECTED COMPONENTS =================
 def findConnectedComponents(head):
     visited = set()
     component = 0
@@ -108,13 +122,10 @@ def findConnectedComponents(head):
     while curr:
         if curr not in visited:
             component += 1
-            area = [0]
-            boundary = []
-
-            dfs(curr, visited, area, boundary)
+            area, boundary = floodFillComponent(curr, visited)
 
             print(f"Object {component}")
-            print(f"Area: {area[0]}")
+            print(f"Area: {area}")
             print("Boundary pixels:", end=" ")
             for b in boundary:
                 print(b.cell_position, end=" ")
@@ -139,8 +150,8 @@ def flipImage(matrix):
 
 # ================= MAIN =================
 if __name__ == "__main__":
-    inputFile = f"input_image.png"
-    outputFile = f"flipped_image.png"
+    inputFile = "input_image.png"
+    outputFile = "flipped_image.png"
 
     matrix, width, height = readPNG(inputFile)
     head = convertToLinkedList(matrix)
