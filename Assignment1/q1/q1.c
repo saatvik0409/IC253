@@ -1,35 +1,41 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
+#include <string.h>
 
+#define WIDTH 20
+#define HEIGHT 20
+#define SCALE 10
+
+// Use stb image libraries
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 
-#define SMALL_SIZE 20
-#define OUT_SIZE 200
-
 typedef struct {
-    int minRow, maxRow, minCol, maxCol;
+    int minRow, maxRow;
+    int minCol, maxCol;
 } Bounds;
 
-typedef struct {
-    int x, y;
-} Point;
+int check_rectangle(Bounds bounds, int pixel_count, int rows, int cols) {
+    int width = bounds.maxCol - bounds.minCol + 1;
+    int height = bounds.maxRow - bounds.minRow + 1;
 
-int check_rectangle(Bounds b, int pixel_count) {
-    int width = b.maxCol - b.minCol + 1;
-    int height = b.maxRow - b.minRow + 1;
+    // Entire image should not be called rectangle
+    if (width == cols && height == rows)
+        return 0;
+
     return pixel_count == width * height;
 }
 
-int check_circle(int pixel_count, Bounds b) {
-    int width = b.maxCol - b.minCol + 1;
-    int height = b.maxRow - b.minRow + 1;
+int check_circle(int pixel_count, Bounds bounds) {
+    int width = bounds.maxCol - bounds.minCol + 1;
+    int height = bounds.maxRow - bounds.minRow + 1;
 
-    if (width != height) return 0;
+    if (width != height)
+        return 0;
 
     double radius = width / 2.0;
     double expected_area = M_PI * radius * radius;
@@ -37,134 +43,163 @@ int check_circle(int pixel_count, Bounds b) {
     return fabs(pixel_count - expected_area) < expected_area * 0.35;
 }
 
-int dfs_iterative(
-    int matrix[SMALL_SIZE][SMALL_SIZE],
-    int visited[SMALL_SIZE][SMALL_SIZE],
-    int sx, int sy,
-    Bounds *b
-) {
-    Point stack[SMALL_SIZE * SMALL_SIZE];
+int dfs(int binary[HEIGHT][WIDTH], int visited[HEIGHT][WIDTH],
+        int sx, int sy, Bounds *bounds) {
+
+    int stack[WIDTH * HEIGHT][2];
     int top = 0;
     int count = 0;
 
-    stack[top++] = (Point){sx, sy};
+    stack[top][0] = sx;
+    stack[top][1] = sy;
+    top++;
 
     while (top > 0) {
-        Point p = stack[--top];
-        int x = p.x, y = p.y;
+        top--;
+        int x = stack[top][0];
+        int y = stack[top][1];
 
-        if (x < 0 || x >= SMALL_SIZE || y < 0 || y >= SMALL_SIZE)
+        if (x < 0 || x >= HEIGHT || y < 0 || y >= WIDTH)
             continue;
-        if (visited[x][y] || matrix[x][y] != 1)
+
+        if (visited[x][y] || binary[x][y] == 0)
             continue;
 
         visited[x][y] = 1;
         count++;
 
-        if (x < b->minRow) b->minRow = x;
-        if (x > b->maxRow) b->maxRow = x;
-        if (y < b->minCol) b->minCol = y;
-        if (y > b->maxCol) b->maxCol = y;
+        if (x < bounds->minRow) bounds->minRow = x;
+        if (x > bounds->maxRow) bounds->maxRow = x;
+        if (y < bounds->minCol) bounds->minCol = y;
+        if (y > bounds->maxCol) bounds->maxCol = y;
 
-        stack[top++] = (Point){x + 1, y};
-        stack[top++] = (Point){x - 1, y};
-        stack[top++] = (Point){x, y + 1};
-        stack[top++] = (Point){x, y - 1};
+        int dirs[4][2] = {{1,0},{-1,0},{0,1},{0,-1}};
+
+        for (int i = 0; i < 4; i++) {
+            stack[top][0] = x + dirs[i][0];
+            stack[top][1] = y + dirs[i][1];
+            top++;
+        }
     }
 
     return count;
 }
 
-void resize_to_20x20(unsigned char *src, int w, int h, int out[20][20]) {
-    for (int i = 0; i < 20; i++) {
-        for (int j = 0; j < 20; j++) {
-            int x = i * h / 20;
-            int y = j * w / 20;
-            out[i][j] = src[x * w + y];
-        }
-    }
-}
-
 int main() {
-    const char *input_path = "input1.png";
-    const char *output_path = "output1.png";
-    int margin = 5;
+    int width, height, channels;
 
-    int w, h, ch;
-    unsigned char *img = stbi_load(input_path, &w, &h, &ch, 1);
+    unsigned char *img = stbi_load("input.png", &width, &height, &channels, 1);
+
     if (!img) {
         printf("Failed to load image\n");
         return 1;
     }
 
-    int img20[20][20];
-    resize_to_20x20(img, w, h, img20);
+    unsigned char small[HEIGHT][WIDTH];
+
+    // Resize very simply by sampling
+    for (int i = 0; i < HEIGHT; i++)
+        for (int j = 0; j < WIDTH; j++)
+            small[i][j] = img[(i * height / HEIGHT) * width + (j * width / WIDTH)];
+
     stbi_image_free(img);
 
-    double mean = 0;
-    for (int i = 0; i < 20; i++)
-        for (int j = 0; j < 20; j++)
-            mean += img20[i][j];
-    mean /= 400.0;
-
-    int binary[20][20];
     int sum = 0;
-    for (int i = 0; i < 20; i++) {
-        for (int j = 0; j < 20; j++) {
-            binary[i][j] = img20[i][j] < (mean - margin);
-            sum += binary[i][j];
+    for (int i = 0; i < HEIGHT; i++)
+        for (int j = 0; j < WIDTH; j++)
+            sum += small[i][j];
+
+    int mean = sum / (HEIGHT * WIDTH);
+    int threshold = mean - 5;
+
+    int binary[HEIGHT][WIDTH];
+    int visited[HEIGHT][WIDTH];
+
+    int object_pixels = 0;
+
+    for (int i = 0; i < HEIGHT; i++) {
+        for (int j = 0; j < WIDTH; j++) {
+            binary[i][j] = small[i][j] < threshold ? 1 : 0;
+            visited[i][j] = 0;
+
+            if (binary[i][j] == 1)
+                object_pixels++;
         }
     }
 
-    if (sum == 0) {
-        printf("No object detected\n");
+    unsigned char output[HEIGHT * SCALE][WIDTH * SCALE];
+
+    // Prepare output image (upsampled grayscale)
+    for (int i = 0; i < HEIGHT * SCALE; i++)
+        for (int j = 0; j < WIDTH * SCALE; j++)
+            output[i][j] = small[i / SCALE][j / SCALE];
+
+    // -------- No object case --------
+    if (object_pixels == 0) {
+        printf("No object detected (all background).\n");
+
+        stbi_write_png("output.png", WIDTH * SCALE, HEIGHT * SCALE, 1,
+                       output, WIDTH * SCALE);
+
+        printf("Output saved as output.png\n");
         return 0;
     }
 
-    int visited[20][20] = {0};
-
-    unsigned char output[OUT_SIZE * OUT_SIZE * 3];
-    for (int i = 0; i < OUT_SIZE * OUT_SIZE * 3; i++)
-        output[i] = 255;
-
-    int scale = OUT_SIZE / 20;
     int object_id = 1;
 
-    for (int i = 0; i < 20; i++) {
-        for (int j = 0; j < 20; j++) {
-            if (binary[i][j] && !visited[i][j]) {
-                Bounds b = {20, -1, 20, -1};
-                int pixels = dfs_iterative(binary, visited, i, j, &b);
+    for (int i = 0; i < HEIGHT; i++) {
+        for (int j = 0; j < WIDTH; j++) {
 
-                const char *shape;
-                if (check_rectangle(b, pixels))
-                    shape = "RECTANGLE";
-                else if (check_circle(pixels, b))
-                    shape = "CIRCLE";
+            if (binary[i][j] == 1 && !visited[i][j]) {
+
+                Bounds bounds = {HEIGHT, -1, WIDTH, -1};
+
+                int pixel_count = dfs(binary, visited, i, j, &bounds);
+
+                int is_rectangle =
+                    check_rectangle(bounds, pixel_count, HEIGHT, WIDTH);
+
+                int is_circle =
+                    check_circle(pixel_count, bounds);
+
+                char shape[20];
+
+                if (is_rectangle)
+                    strcpy(shape, "RECTANGLE");
+                else if (is_circle)
+                    strcpy(shape, "CIRCLE");
                 else
-                    shape = "UNKNOWN";
+                    strcpy(shape, "UNKNOWN");
 
-                printf("Object %d: %s\n", object_id++, shape);
+                printf("Object %d: %s\n", object_id, shape);
 
-                /* Draw red bounding box */
-                for (int x = b.minRow * scale; x <= (b.maxRow + 1) * scale; x++) {
-                    for (int y = b.minCol * scale; y <= (b.maxCol + 1) * scale; y++) {
-                        if (x == b.minRow * scale || x == (b.maxRow + 1) * scale ||
-                            y == b.minCol * scale || y == (b.maxCol + 1) * scale) {
+                // Draw bounding box ONLY if known
+                if (strcmp(shape, "UNKNOWN") != 0) {
 
-                            int idx = (x * OUT_SIZE + y) * 3;
-                            output[idx] = 255;
-                            output[idx + 1] = 0;
-                            output[idx + 2] = 0;
-                        }
+                    for (int x = bounds.minRow * SCALE;
+                         x < (bounds.maxRow + 1) * SCALE; x++) {
+
+                        output[x][bounds.minCol * SCALE] = 0;
+                        output[x][(bounds.maxCol + 1) * SCALE - 1] = 0;
+                    }
+
+                    for (int y = bounds.minCol * SCALE;
+                         y < (bounds.maxCol + 1) * SCALE; y++) {
+
+                        output[bounds.minRow * SCALE][y] = 0;
+                        output[(bounds.maxRow + 1) * SCALE - 1][y] = 0;
                     }
                 }
+
+                object_id++;
             }
         }
     }
 
-    stbi_write_png(output_path, OUT_SIZE, OUT_SIZE, 3, output, OUT_SIZE * 3);
-    printf("Output saved as %s\n", output_path);
+    stbi_write_png("output.png", WIDTH * SCALE, HEIGHT * SCALE, 1,
+                   output, WIDTH * SCALE);
+
+    printf("Output saved as output.png\n");
 
     return 0;
 }
